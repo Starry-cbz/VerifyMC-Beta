@@ -178,9 +178,12 @@ public class VerifyMC extends JavaPlugin implements Listener {
         }
         boolean autoSync = getConfig().getBoolean("auto_sync_whitelist", true);
         boolean autoCleanup = getConfig().getBoolean("auto_cleanup_whitelist", true);
-        if ("bukkit".equalsIgnoreCase(whitelistMode) && autoSync) {
+        // Keep Bukkit whitelist in sync no matter which whitelist mode is chosen
+        if (autoSync) {
             syncWhitelistToServer();
-        } else if (!"bukkit".equalsIgnoreCase(whitelistMode) && autoCleanup) {
+        }
+        // Clean up unexpected whitelist entries (without removing approved users)
+        if (autoCleanup) {
             cleanupServerWhitelist();
         }
         // Always register event listener for player login interception
@@ -550,6 +553,8 @@ public class VerifyMC extends JavaPlugin implements Listener {
             event.disallow(Result.KICK_WHITELIST, msg);
             debugLog("Blocked unregistered player: " + player.getName() + " from IP: " + ip);
         } else {
+            // Ensure approved users are explicitly allowed even if vanilla whitelist rejected them earlier
+            event.setResult(Result.ALLOWED);
             debugLog("Allowed registered player: " + player.getName() + " (Status: approved)");
         }
     }
@@ -678,8 +683,11 @@ public class VerifyMC extends JavaPlugin implements Listener {
     private void cleanupServerWhitelist() {
         for (org.bukkit.OfflinePlayer p : Bukkit.getWhitelistedPlayers()) {
             Map<String, Object> user = userDao.getUserByUsername(p.getName());
-            if (user != null && "approved".equals(user.get("status"))) {
+            if (user == null || !"approved".equals(user.get("status"))) {
                 p.setWhitelisted(false);
+            } else {
+                // Ensure approved users stay whitelisted
+                p.setWhitelisted(true);
             }
         }
     }
