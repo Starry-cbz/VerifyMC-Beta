@@ -26,6 +26,7 @@ smtp:
   password: your_email_password
   from: your_email@qq.com
   enable_ssl: true
+email.subject: VerifyMC Verification Code
 whitelist_json_sync: true
 auto_sync_whitelist: true
 auto_cleanup_whitelist: true

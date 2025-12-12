@@ -41,7 +41,6 @@ public class WebServer {
     private final ResourceBundle messages;
     private final boolean debug;
     private final HashMap<String, ResourceBundle> languageCache = new HashMap<>();
-    private final ConcurrentHashMap<String, Long> languageLastModified = new ConcurrentHashMap<>();
     
     // Authentication related
     private final ConcurrentHashMap<String, Long> validTokens = new ConcurrentHashMap<>();
@@ -382,7 +381,9 @@ public class WebServer {
             String code = codeService.generateCode(email);
             debugLog("Generated verification code for email: " + email + ", code: " + code);
             
-            boolean sent = mailService.sendCode(email, getMsg("email.subject", language), code);
+            // Get email subject from config.yml, fallback to default if not set
+            String emailSubject = plugin.getConfig().getString("email.subject", "VerifyMC Verification Code");
+            boolean sent = mailService.sendCode(email, emailSubject, code);
             JSONObject resp = new JSONObject();
             resp.put("success", sent);
             resp.put("msg", sent ? getMsg("email.sent", language) : getMsg("email.failed", language));
@@ -1334,42 +1335,35 @@ public class WebServer {
      * @return ResourceBundle for the language
      */
     private ResourceBundle getLanguageBundle(String language) {
+        // Check cache first
+        if (languageCache.containsKey(language)) {
+            return languageCache.get(language);
+        }
+        
+        // Load language file
         try {
             File i18nDir = new File(plugin.getDataFolder(), "i18n");
             File propFile = new File(i18nDir, "messages_" + language + ".properties");
-
-            // Reload cache when language file changes on disk
+            
             if (propFile.exists()) {
-                long lastModified = propFile.lastModified();
-                Long cachedModified = languageLastModified.get(language);
-                if (cachedModified != null && cachedModified == lastModified && languageCache.containsKey(language)) {
-                    return languageCache.get(language);
-                }
-
                 try (InputStreamReader reader = new InputStreamReader(new FileInputStream(propFile), java.nio.charset.StandardCharsets.UTF_8)) {
                     ResourceBundle bundle = new java.util.PropertyResourceBundle(reader);
                     languageCache.put(language, bundle);
-                    languageLastModified.put(language, lastModified);
                     return bundle;
                 }
-            }
-
-            // Fallback to JAR bundle (for missing or unreadable external file)
-            if (languageCache.containsKey(language)) {
-                return languageCache.get(language);
-            }
-            try {
-                ResourceBundle bundle = ResourceBundle.getBundle("i18n.messages", new java.util.Locale(language));
-                languageCache.put(language, bundle);
-                languageLastModified.put(language, -1L);
-                return bundle;
-            } catch (Exception e) {
-                // Fallback to default messages
-                if (!languageCache.containsKey("default")) {
-                    languageCache.put("default", messages);
-                    languageLastModified.put("default", -1L);
+            } else {
+                // Try to load from JAR
+                try {
+                    ResourceBundle bundle = ResourceBundle.getBundle("i18n.messages", new java.util.Locale(language));
+                    languageCache.put(language, bundle);
+                    return bundle;
+                } catch (Exception e) {
+                    // Fallback to default messages
+                    if (!languageCache.containsKey("default")) {
+                        languageCache.put("default", messages);
+                    }
+                    return messages;
                 }
-                return messages;
             }
         } catch (Exception e) {
             debugLog("Failed to load language bundle for: " + language + ", error: " + e.getMessage());
