@@ -134,6 +134,8 @@ smtp:
   password: your_email_password
   from: your_email@qq.com
   enable_ssl: true
+# Subject (title) of the verification code email
+email.subject: VerifyMC Verification Code
 
 # ----------------------------------------
 # Sync Settings (for bukkit mode)

@@ -26,6 +26,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.nio.charset.StandardCharsets;
 
 public class WebServer {
     private HttpServer server;
@@ -229,9 +230,10 @@ public class WebServer {
         server.createContext("/api/ping", exchange -> {
             String resp = "{\"msg\":\"pong\"}";
             exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
-            exchange.sendResponseHeaders(200, resp.getBytes().length);
+            byte[] data = resp.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, data.length);
             OutputStream os = exchange.getResponseBody();
-            os.write(resp.getBytes());
+            os.write(data);
             os.close();
         });
         
@@ -330,7 +332,7 @@ public class WebServer {
                 return; 
             }
             
-            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes()));
+            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             String email = req.optString("email", "").trim().toLowerCase();
             String language = req.optString("language", "en");
 
@@ -382,7 +384,7 @@ public class WebServer {
             debugLog("Generated verification code for email: " + email + ", code: " + code);
             
             // Get email subject from config.yml, fallback to default if not set
-            String emailSubject = plugin.getConfig().getString("email.subject", "VerifyMC Verification Code");
+            String emailSubject = plugin.getConfig().getString("email_subject", "VerifyMC Verification Code");
             boolean sent = mailService.sendCode(email, emailSubject, code);
             JSONObject resp = new JSONObject();
             resp.put("success", sent);
@@ -401,7 +403,7 @@ public class WebServer {
         server.createContext("/api/register", exchange -> {
             debugLog("/api/register called");
             if (!"POST".equals(exchange.getRequestMethod())) { exchange.sendResponseHeaders(405, 0); exchange.close(); return; }
-            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes()));
+            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             String email = req.optString("email", "").trim().toLowerCase();
             String code = req.optString("code");
             String uuid = req.optString("uuid");
@@ -559,7 +561,7 @@ public class WebServer {
                 exchange.close(); 
                 return; 
             }
-            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes()));
+            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             String password = req.optString("password");
             String language = req.optString("language", "en");
             
@@ -651,7 +653,7 @@ public class WebServer {
                 return;
             }
             
-            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes()));
+            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             String uuid = req.optString("uuid");
             String action = req.optString("action");
             String language = req.optString("language", "en");
@@ -870,7 +872,7 @@ public class WebServer {
                 return;
             }
             
-            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes()));
+            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             String uuid = req.optString("uuid");
             String language = req.optString("language", "en");
             
@@ -938,7 +940,7 @@ public class WebServer {
                 return;
             }
             
-            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes()));
+            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             String uuid = req.optString("uuid");
             String language = req.optString("language", "en");
             
@@ -1001,7 +1003,7 @@ public class WebServer {
                 return;
             }
             
-            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes()));
+            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             String uuid = req.optString("uuid");
             String language = req.optString("language", "en");
             
@@ -1064,7 +1066,7 @@ public class WebServer {
                 return;
             }
             
-            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes()));
+            JSONObject req = new JSONObject(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             String uuid = req.optString("uuid");
             String username = req.optString("username");
             String newPassword = req.optString("newPassword");
@@ -1289,8 +1291,38 @@ public class WebServer {
                     return;
                 }
                 String mime = Files.probeContentType(file);
-                if (mime == null) mime = "application/octet-stream";
-                exchange.getResponseHeaders().add("Content-Type", mime);
+                if (mime == null) {
+                    // Try to determine MIME type from file extension
+                    String fileName = file.getFileName().toString().toLowerCase();
+                    if (fileName.endsWith(".html") || fileName.endsWith(".htm")) {
+                        mime = "text/html";
+                    } else if (fileName.endsWith(".css")) {
+                        mime = "text/css";
+                    } else if (fileName.endsWith(".js")) {
+                        mime = "application/javascript";
+                    } else if (fileName.endsWith(".json")) {
+                        mime = "application/json";
+                    } else if (fileName.endsWith(".svg")) {
+                        mime = "image/svg+xml";
+                    } else if (fileName.endsWith(".xml")) {
+                        mime = "text/xml";
+                    } else {
+                        mime = "application/octet-stream";
+                    }
+                }
+                
+                // Add charset=utf-8 for text-based content types
+                String contentType = mime;
+                if (mime.startsWith("text/") || 
+                    mime.equals("application/javascript") || 
+                    mime.equals("application/json") ||
+                    mime.equals("application/xml") ||
+                    mime.equals("text/xml") ||
+                    mime.equals("image/svg+xml")) {
+                    contentType = mime + "; charset=utf-8";
+                }
+                
+                exchange.getResponseHeaders().add("Content-Type", contentType);
                 byte[] data = Files.readAllBytes(file);
                 exchange.sendResponseHeaders(200, data.length);
                 OutputStream os = exchange.getResponseBody();
@@ -1314,7 +1346,7 @@ public class WebServer {
 
     private void sendJson(HttpExchange exchange, JSONObject resp) throws IOException {
         JSONObject withCopy = withCopyright(resp);
-        byte[] data = withCopy.toString().getBytes();
+        byte[] data = withCopy.toString().getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
         exchange.sendResponseHeaders(200, data.length);
         exchange.getResponseBody().write(data);

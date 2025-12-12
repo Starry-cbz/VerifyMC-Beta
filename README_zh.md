@@ -140,6 +140,8 @@ smtp:
   password: your_email_password
   from: your_email@qq.com
   enable_ssl: true
+# 验证码邮件的主题（标题）
+email.subject: VerifyMC Verification Code
 
 # ----------------------------------------
 # 同步设置 (用于 bukkit 模式)

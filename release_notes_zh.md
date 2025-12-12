@@ -1,15 +1,17 @@
-[English](https://github.com/KiteMC/VerifyMC/releases/tag/v1.2.3) | 简体中文 | [官方文档](https://kitemc.com/docs/verifymc/)
+[English](https://github.com/KiteMC/VerifyMC/releases/tag/v1.2.4) | 简体中文 | [官方文档](https://kitemc.com/docs/verifymc/)
 
-# VerifyMC v1.2.3 更新日志
+# VerifyMC v1.2.4 更新日志
 
-## 🔧 Folia 兼容性修复
+## 🐛 问题修复与改进
 
 ### 修复的问题
 
-- **玩家踢出崩溃**：修复 `IllegalStateException: Player is already removed from player chunk loader` 错误
-- **插件启动失败**：修复 `UnsupportedOperationException` 错误，插件现在可在 Folia 上正常启动
+- **服务器重启后白名单失效**：修复了服务器重启后，除 OP 外其他白名单玩家无法加入服务器的问题
+- **字符编码错乱**：修复了部分用户访问 Web 界面时出现字符乱码的问题
+- **邮件主题配置**：将邮件主题从 i18n 文件移至 config.yml，支持自定义配置
 
-### 解决方案
+### 改进内容
 
-- 使用 `PlayerLoginEvent` 在登录阶段拦截玩家，避免区块加载冲突
-- 自动检测 Folia 环境，禁用不兼容的异步任务（whitelist.json 监控、版本提醒）
+- 所有 HTTP 响应现在明确使用 UTF-8 编码，并正确声明字符集
+- 改进了静态文件的 Content-Type 处理，为文本类文件明确指定字符集
+- 增强了白名单同步逻辑，确保服务器重启后的一致性

@@ -1,18 +1,20 @@
 release: true
-version: 1.2.3
+version: 1.2.4
 release_notes: |
-  [简体中文](https://github.com/KiteMC/VerifyMC/blob/v1.2.3/release_notes_zh.md) | English | [Official Documentation](https://kitemc.com/docs/verifymc/)
+  [简体中文](https://github.com/KiteMC/VerifyMC/blob/v1.2.4/release_notes_zh.md) | English | [Official Documentation](https://kitemc.com/docs/verifymc/)
   
-  # VerifyMC v1.2.3 Release Notes
+  # VerifyMC v1.2.4 Release Notes
   
-  ## 🔧 Folia Compatibility Fixed
+  ## 🐛 Bug Fixes & Improvements
   
   ### Fixed Issues
   
-  - **Player Kick Crashes**: Fixed `IllegalStateException: Player is already removed from player chunk loader` error
-  - **Plugin Startup Failures**: Fixed `UnsupportedOperationException` error, plugin now starts properly on Folia
+  - **Whitelist Invalidation After Server Restart**: Fixed issue where whitelisted players (except OPs) were rejected after server restart, even though they were in the whitelist
+  - **Character Encoding Issues**: Fixed character encoding problems in web interface that caused garbled text for some users
+  - **Email Subject Configuration**: Moved email subject from i18n to config.yml for better customization
   
-  ### Solutions
+  ### Improvements
   
-  - Use `PlayerLoginEvent` to intercept players during login phase, avoiding chunk loader conflicts
-  - Auto-detect Folia environment and disable incompatible async tasks (whitelist.json monitoring, version reminders)
+  - All HTTP responses now explicitly use UTF-8 encoding with proper charset declaration
+  - Improved static file Content-Type handling with charset specification for text-based files
+  - Enhanced whitelist synchronization logic to ensure consistency after server restarts
