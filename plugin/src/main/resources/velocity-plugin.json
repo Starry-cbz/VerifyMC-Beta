@@ -1,0 +1,10 @@
+{
+  "id": "verifymc",
+  "name": "VerifyMC",
+  "version": "1.2.4",
+  "description": "Web-based MC whitelist authentication plugin for Velocity",
+  "authors": ["KiteMC"],
+  "main": "team.kitemc.verifymc.velocity.VerifyMCVelocity",
+  "dependencies": []
+}
+
