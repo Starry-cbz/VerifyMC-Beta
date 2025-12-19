@@ -14,7 +14,6 @@ import com.velocitypowered.api.command.CommandManager;
 import com.velocitypowered.api.command.SimpleCommand;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
-import org.slf4j.Logger;
 import team.kitemc.verifymc.db.FileUserDao;
 import team.kitemc.verifymc.db.FileAuditDao;
 import team.kitemc.verifymc.db.UserDao;
@@ -110,7 +109,6 @@ public class VerifyMCVelocity {
             logger.warn(getMessage("websocket.start_failed") + ": " + e.getMessage());
         }
 
-        PluginAdapter pluginAdapter = new PluginAdapter(this);
         webServer = new WebServer(port, staticDir, pluginAdapter, codeService, mailService, userDao, auditDao, authmeService, wsServer, messages);
         try {
             webServer.start();
@@ -309,6 +307,10 @@ public class VerifyMCVelocity {
 
     public org.slf4j.Logger getLogger() {
         return logger;
+    }
+
+    public ProxyServer getServer() {
+        return server;
     }
 
     private class VelocityCommand implements SimpleCommand {

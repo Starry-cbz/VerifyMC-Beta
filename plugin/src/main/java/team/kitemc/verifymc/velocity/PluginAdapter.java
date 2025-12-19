@@ -2,14 +2,10 @@ package team.kitemc.verifymc.velocity;
 
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.yaml.snakeyaml.Yaml;
-import org.slf4j.Logger;
 
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * Adapter class to make Velocity plugin compatible with Bukkit Plugin interface
@@ -158,24 +154,32 @@ public class PluginAdapter implements org.bukkit.plugin.Plugin {
         return "VerifyMC";
     }
 
-    @Override
     public org.bukkit.scheduler.BukkitScheduler getScheduler() {
         return new VelocitySchedulerAdapter(server);
     }
 
-    @Override
     public org.bukkit.command.CommandExecutor getCommand(String name) {
         return null; // Commands handled by Velocity
     }
 
-    @Override
     public java.util.List<org.bukkit.command.Command> getCommands() {
         return java.util.Collections.emptyList();
     }
 
-    @Override
     public java.io.File getFile() {
         return null; // Not applicable for Velocity
+    }
+
+    // CommandExecutor interface implementation
+    @Override
+    public boolean onCommand(org.bukkit.command.CommandSender sender, org.bukkit.command.Command command, String label, String[] args) {
+        return false; // Commands handled by Velocity
+    }
+
+    // TabCompleter interface implementation
+    @Override
+    public java.util.List<String> onTabComplete(org.bukkit.command.CommandSender sender, org.bukkit.command.Command command, String alias, String[] args) {
+        return java.util.Collections.emptyList(); // Commands handled by Velocity
     }
 
     @Override
@@ -212,10 +216,6 @@ public class PluginAdapter implements org.bukkit.plugin.Plugin {
             logger.warn(msg);
         }
 
-        @Override
-        public void warn(String msg) {
-            logger.warn(msg);
-        }
 
         @Override
         public void severe(String msg) {
@@ -309,7 +309,6 @@ public class PluginAdapter implements org.bukkit.plugin.Plugin {
             // Velocity tasks are managed differently
         }
 
-        @Override
         public void cancelAllTasks() {
             // Velocity tasks are managed differently
         }
@@ -404,6 +403,122 @@ public class PluginAdapter implements org.bukkit.plugin.Plugin {
         @Override
         public org.bukkit.scheduler.BukkitTask runTaskTimerAsynchronously(org.bukkit.plugin.Plugin plugin, org.bukkit.scheduler.BukkitRunnable task, long delay, long period) throws IllegalArgumentException {
             return runTaskTimerAsynchronously(plugin, (Runnable) task, delay, period);
+        }
+
+        // Consumer-based methods (Bukkit API 1.13+)
+        @Override
+        public void runTask(org.bukkit.plugin.Plugin plugin, java.util.function.Consumer<org.bukkit.scheduler.BukkitTask> task) throws IllegalArgumentException {
+            runTask(plugin, (Runnable) () -> {
+                // Create a dummy task for Consumer
+                org.bukkit.scheduler.BukkitTask dummyTask = new org.bukkit.scheduler.BukkitTask() {
+                    @Override
+                    public int getTaskId() { return 0; }
+                    @Override
+                    public org.bukkit.plugin.Plugin getOwner() { return plugin; }
+                    @Override
+                    public boolean isSync() { return true; }
+                    @Override
+                    public boolean isCancelled() { return false; }
+                    @Override
+                    public void cancel() {}
+                };
+                task.accept(dummyTask);
+            });
+        }
+
+        @Override
+        public void runTaskAsynchronously(org.bukkit.plugin.Plugin plugin, java.util.function.Consumer<org.bukkit.scheduler.BukkitTask> task) throws IllegalArgumentException {
+            runTaskAsynchronously(plugin, (Runnable) () -> {
+                org.bukkit.scheduler.BukkitTask dummyTask = new org.bukkit.scheduler.BukkitTask() {
+                    @Override
+                    public int getTaskId() { return 0; }
+                    @Override
+                    public org.bukkit.plugin.Plugin getOwner() { return plugin; }
+                    @Override
+                    public boolean isSync() { return false; }
+                    @Override
+                    public boolean isCancelled() { return false; }
+                    @Override
+                    public void cancel() {}
+                };
+                task.accept(dummyTask);
+            });
+        }
+
+        @Override
+        public void runTaskLater(org.bukkit.plugin.Plugin plugin, java.util.function.Consumer<org.bukkit.scheduler.BukkitTask> task, long delay) throws IllegalArgumentException {
+            runTaskLater(plugin, (Runnable) () -> {
+                org.bukkit.scheduler.BukkitTask dummyTask = new org.bukkit.scheduler.BukkitTask() {
+                    @Override
+                    public int getTaskId() { return 0; }
+                    @Override
+                    public org.bukkit.plugin.Plugin getOwner() { return plugin; }
+                    @Override
+                    public boolean isSync() { return true; }
+                    @Override
+                    public boolean isCancelled() { return false; }
+                    @Override
+                    public void cancel() {}
+                };
+                task.accept(dummyTask);
+            }, delay);
+        }
+
+        @Override
+        public void runTaskLaterAsynchronously(org.bukkit.plugin.Plugin plugin, java.util.function.Consumer<org.bukkit.scheduler.BukkitTask> task, long delay) throws IllegalArgumentException {
+            runTaskLaterAsynchronously(plugin, (Runnable) () -> {
+                org.bukkit.scheduler.BukkitTask dummyTask = new org.bukkit.scheduler.BukkitTask() {
+                    @Override
+                    public int getTaskId() { return 0; }
+                    @Override
+                    public org.bukkit.plugin.Plugin getOwner() { return plugin; }
+                    @Override
+                    public boolean isSync() { return false; }
+                    @Override
+                    public boolean isCancelled() { return false; }
+                    @Override
+                    public void cancel() {}
+                };
+                task.accept(dummyTask);
+            }, delay);
+        }
+
+        @Override
+        public void runTaskTimer(org.bukkit.plugin.Plugin plugin, java.util.function.Consumer<org.bukkit.scheduler.BukkitTask> task, long delay, long period) throws IllegalArgumentException {
+            runTaskTimer(plugin, (Runnable) () -> {
+                org.bukkit.scheduler.BukkitTask dummyTask = new org.bukkit.scheduler.BukkitTask() {
+                    @Override
+                    public int getTaskId() { return 0; }
+                    @Override
+                    public org.bukkit.plugin.Plugin getOwner() { return plugin; }
+                    @Override
+                    public boolean isSync() { return true; }
+                    @Override
+                    public boolean isCancelled() { return false; }
+                    @Override
+                    public void cancel() {}
+                };
+                task.accept(dummyTask);
+            }, delay, period);
+        }
+
+        @Override
+        public void runTaskTimerAsynchronously(org.bukkit.plugin.Plugin plugin, java.util.function.Consumer<org.bukkit.scheduler.BukkitTask> task, long delay, long period) throws IllegalArgumentException {
+            runTaskTimerAsynchronously(plugin, (Runnable) () -> {
+                org.bukkit.scheduler.BukkitTask dummyTask = new org.bukkit.scheduler.BukkitTask() {
+                    @Override
+                    public int getTaskId() { return 0; }
+                    @Override
+                    public org.bukkit.plugin.Plugin getOwner() { return plugin; }
+                    @Override
+                    public boolean isSync() { return false; }
+                    @Override
+                    public boolean isCancelled() { return false; }
+                    @Override
+                    public void cancel() {}
+                };
+                task.accept(dummyTask);
+            }, delay, period);
         }
     }
 }
