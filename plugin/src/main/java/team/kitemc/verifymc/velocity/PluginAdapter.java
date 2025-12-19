@@ -4,31 +4,96 @@ import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.*;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
  * Adapter class to make Velocity plugin compatible with Bukkit Plugin interface
- * This allows Velocity plugin to work with existing service classes that expect Bukkit Plugin
+ * Uses dynamic proxy to avoid compile-time dependency on Bukkit Plugin interface
+ * This prevents ClassNotFoundException in Velocity environment
  */
-public class PluginAdapter implements org.bukkit.plugin.Plugin {
+public class PluginAdapter {
     private final VerifyMCVelocity velocityPlugin;
     private final com.velocitypowered.api.proxy.ProxyServer server;
     private FileConfiguration config;
-    private final Path dataFolder;
+    private final Path dataDirectory;
+    private Object pluginProxy;
 
     public PluginAdapter(VerifyMCVelocity velocityPlugin) {
         this.velocityPlugin = velocityPlugin;
         this.server = velocityPlugin.getServer();
-        this.dataFolder = velocityPlugin.getDataFolder();
+        this.dataDirectory = velocityPlugin.getDataFolder();
+        this.pluginProxy = createPluginProxy();
     }
 
-    @Override
+    /**
+     * Create a dynamic proxy for Bukkit Plugin interface using reflection
+     * This avoids compile-time dependency and handles ClassNotFoundException gracefully
+     */
+    private Object createPluginProxy() {
+        try {
+            // Try to load Bukkit Plugin interface using reflection
+            Class<?> pluginInterface = Class.forName("org.bukkit.plugin.Plugin");
+            return Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class[]{pluginInterface},
+                new PluginInvocationHandler()
+            );
+        } catch (ClassNotFoundException e) {
+            // In Velocity environment, Bukkit classes are not available at runtime
+            // Create a minimal proxy that implements the methods we need
+            velocityPlugin.getLogger().warn("Bukkit Plugin interface not available, creating compatibility proxy");
+            return createCompatibilityProxy();
+        }
+    }
+
+    /**
+     * Create a compatibility proxy that doesn't require Bukkit classes
+     */
+    private Object createCompatibilityProxy() {
+        // Return a proxy that implements common methods
+        return Proxy.newProxyInstance(
+            getClass().getClassLoader(),
+            new Class[]{}, // Empty interfaces - we'll handle method calls manually
+            new PluginInvocationHandler()
+        );
+    }
+
+    /**
+     * Get the Plugin proxy object
+     * This method returns Object to avoid compile-time dependency on Bukkit Plugin interface
+     */
+    public Object getPluginProxy() {
+        return pluginProxy;
+    }
+
+    /**
+     * Cast to Plugin interface (for use with Bukkit-based services)
+     * Returns null if Bukkit classes are not available
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T asPlugin(Class<T> pluginClass) {
+        if (pluginProxy != null && pluginClass.isInstance(pluginProxy)) {
+            return (T) pluginProxy;
+        }
+        // Try to cast using reflection
+        try {
+            if (pluginProxy != null) {
+                return pluginClass.cast(pluginProxy);
+            }
+        } catch (ClassCastException e) {
+            // Ignore
+        }
+        return null;
+    }
+
     public File getDataFolder() {
-        return dataFolder.toFile();
+        return dataDirectory.toFile();
     }
 
-    @Override
     public FileConfiguration getConfig() {
         if (config == null) {
             reloadConfig();
@@ -36,10 +101,9 @@ public class PluginAdapter implements org.bukkit.plugin.Plugin {
         return config;
     }
 
-    @Override
     public void saveConfig() {
         try {
-            Path configFile = dataFolder.resolve("config.yml");
+            Path configFile = dataDirectory.resolve("config.yml");
             if (config != null) {
                 config.save(configFile.toFile());
             }
@@ -48,9 +112,8 @@ public class PluginAdapter implements org.bukkit.plugin.Plugin {
         }
     }
 
-    @Override
     public void saveDefaultConfig() {
-        Path configFile = dataFolder.resolve("config.yml");
+        Path configFile = dataDirectory.resolve("config.yml");
         if (!Files.exists(configFile)) {
             try (InputStream defaultConfig = getClass().getClassLoader().getResourceAsStream("config.yml")) {
                 if (defaultConfig != null) {
@@ -62,9 +125,8 @@ public class PluginAdapter implements org.bukkit.plugin.Plugin {
         }
     }
 
-    @Override
     public void saveResource(String resourcePath, boolean replace) {
-        Path targetFile = dataFolder.resolve(resourcePath);
+        Path targetFile = dataDirectory.resolve(resourcePath);
         if (Files.exists(targetFile) && !replace) {
             return;
         }
@@ -78,9 +140,8 @@ public class PluginAdapter implements org.bukkit.plugin.Plugin {
         }
     }
 
-    @Override
     public void reloadConfig() {
-        Path configFile = dataFolder.resolve("config.yml");
+        Path configFile = dataDirectory.resolve("config.yml");
         if (Files.exists(configFile)) {
             try (InputStream inputStream = Files.newInputStream(configFile)) {
                 config = YamlConfiguration.loadConfiguration(new InputStreamReader(inputStream, java.nio.charset.StandardCharsets.UTF_8));
@@ -95,106 +156,105 @@ public class PluginAdapter implements org.bukkit.plugin.Plugin {
         }
     }
 
-    @Override
-    public org.bukkit.plugin.PluginLoader getPluginLoader() {
-        return null; // Not used in Velocity
-    }
-
-    @Override
-    public org.bukkit.Server getServer() {
-        return null; // Not used in Velocity
-    }
-
-    @Override
-    public boolean isEnabled() {
-        return true; // Velocity plugin is always enabled when instantiated
-    }
-
-    @Override
-    public void onDisable() {
-        // Handled by Velocity lifecycle
-    }
-
-    @Override
-    public void onLoad() {
-        // Handled by Velocity lifecycle
-    }
-
-    @Override
-    public void onEnable() {
-        // Handled by Velocity lifecycle
-    }
-
-    @Override
-    public boolean isNaggable() {
-        return false;
-    }
-
-    @Override
-    public void setNaggable(boolean canNag) {
-        // Not used
-    }
-
-    @Override
-    public org.bukkit.plugin.PluginDescriptionFile getDescription() {
-        return new org.bukkit.plugin.PluginDescriptionFile(
-            "VerifyMC",
-            "1.2.4",
-            "team.kitemc.verifymc.velocity.VerifyMCVelocity"
-        );
-    }
-
-    @Override
     public java.util.logging.Logger getLogger() {
         return new BukkitLoggerAdapter(velocityPlugin.getLogger());
     }
 
-    @Override
-    public String getName() {
-        return "VerifyMC";
+    public Object getScheduler() {
+        return new VelocitySchedulerAdapter(server).getSchedulerProxy();
     }
 
-    public org.bukkit.scheduler.BukkitScheduler getScheduler() {
-        return new VelocitySchedulerAdapter(server);
-    }
-
-    public org.bukkit.command.CommandExecutor getCommand(String name) {
-        return null; // Commands handled by Velocity
-    }
-
-    public java.util.List<org.bukkit.command.Command> getCommands() {
-        return java.util.Collections.emptyList();
-    }
-
-    public java.io.File getFile() {
-        return null; // Not applicable for Velocity
-    }
-
-    // CommandExecutor interface implementation
-    @Override
-    public boolean onCommand(org.bukkit.command.CommandSender sender, org.bukkit.command.Command command, String label, String[] args) {
-        return false; // Commands handled by Velocity
-    }
-
-    // TabCompleter interface implementation
-    @Override
-    public java.util.List<String> onTabComplete(org.bukkit.command.CommandSender sender, org.bukkit.command.Command command, String alias, String[] args) {
-        return java.util.Collections.emptyList(); // Commands handled by Velocity
-    }
-
-    @Override
-    public java.io.InputStream getResource(String filename) {
-        return getClass().getClassLoader().getResourceAsStream(filename);
-    }
-
-    @Override
-    public org.bukkit.generator.ChunkGenerator getDefaultWorldGenerator(String worldName, String id) {
-        return null; // Not applicable for Velocity
-    }
-
-    @Override
-    public org.bukkit.generator.BiomeProvider getDefaultBiomeProvider(String worldName, String id) {
-        return null; // Not applicable for Velocity
+    // Invocation handler for Plugin interface proxy
+    private class PluginInvocationHandler implements InvocationHandler {
+        @Override
+        public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+            String methodName = method.getName();
+            Class<?> returnType = method.getReturnType();
+            
+            // Handle common Plugin interface methods
+            switch (methodName) {
+                case "getDataFolder":
+                    return getDataFolder();
+                case "getConfig":
+                    return getConfig();
+                case "saveConfig":
+                    saveConfig();
+                    return null;
+                case "saveDefaultConfig":
+                    saveDefaultConfig();
+                    return null;
+                case "saveResource":
+                    if (args != null && args.length >= 2) {
+                        saveResource((String) args[0], (Boolean) args[1]);
+                    }
+                    return null;
+                case "reloadConfig":
+                    reloadConfig();
+                    return null;
+                case "getLogger":
+                    return getLogger();
+                case "getScheduler":
+                    return getScheduler();
+                case "getName":
+                    return "VerifyMC";
+                case "isEnabled":
+                    return true;
+                case "getDescription":
+                    try {
+                        Class<?> descClass = Class.forName("org.bukkit.plugin.PluginDescriptionFile");
+                        return descClass.getConstructor(String.class, String.class, String.class)
+                            .newInstance("VerifyMC", "1.2.4", "team.kitemc.verifymc.velocity.VerifyMCVelocity");
+                    } catch (Exception e) {
+                        return null;
+                    }
+                case "getResource":
+                    if (args != null && args.length > 0) {
+                        return getClass().getClassLoader().getResourceAsStream((String) args[0]);
+                    }
+                    return null;
+                case "getPluginLoader":
+                case "getServer":
+                case "getFile":
+                case "getCommand":
+                case "getCommands":
+                case "getDefaultWorldGenerator":
+                case "getDefaultBiomeProvider":
+                    return null;
+                case "onDisable":
+                case "onLoad":
+                case "onEnable":
+                case "setNaggable":
+                    return null;
+                case "isNaggable":
+                    return false;
+                case "toString":
+                    return "VerifyMC[Velocity]";
+                case "equals":
+                    return proxy == (args != null && args.length > 0 ? args[0] : null);
+                case "hashCode":
+                    return System.identityHashCode(proxy);
+                default:
+                    // For CommandExecutor and TabCompleter methods
+                    if (methodName.equals("onCommand")) {
+                        return false;
+                    }
+                    if (methodName.equals("onTabComplete")) {
+                        return java.util.Collections.emptyList();
+                    }
+                    // Return default value based on return type
+                    if (returnType.isPrimitive()) {
+                        if (returnType == boolean.class) return false;
+                        if (returnType == int.class) return 0;
+                        if (returnType == long.class) return 0L;
+                        if (returnType == double.class) return 0.0;
+                        if (returnType == float.class) return 0.0f;
+                        if (returnType == byte.class) return (byte) 0;
+                        if (returnType == short.class) return (short) 0;
+                        if (returnType == char.class) return '\0';
+                    }
+                    return null;
+            }
+        }
     }
 
     // Logger adapter
@@ -216,7 +276,6 @@ public class PluginAdapter implements org.bukkit.plugin.Plugin {
             logger.warn(msg);
         }
 
-
         @Override
         public void severe(String msg) {
             logger.error(msg);
@@ -224,302 +283,85 @@ public class PluginAdapter implements org.bukkit.plugin.Plugin {
     }
 
     // Scheduler adapter
-    private static class VelocitySchedulerAdapter implements org.bukkit.scheduler.BukkitScheduler {
+    private static class VelocitySchedulerAdapter {
         private final com.velocitypowered.api.proxy.ProxyServer server;
 
         public VelocitySchedulerAdapter(com.velocitypowered.api.proxy.ProxyServer server) {
             this.server = server;
         }
 
-        @Override
-        public int scheduleSyncDelayedTask(org.bukkit.plugin.Plugin plugin, Runnable task, long delay) {
-            server.getScheduler().buildTask(plugin, task).delay(delay * 50, java.util.concurrent.TimeUnit.MILLISECONDS).schedule();
-            return 0;
+        // Create a proxy for BukkitScheduler interface
+        public Object getSchedulerProxy() {
+            try {
+                Class<?> schedulerInterface = Class.forName("org.bukkit.scheduler.BukkitScheduler");
+                return Proxy.newProxyInstance(
+                    getClass().getClassLoader(),
+                    new Class[]{schedulerInterface},
+                    new SchedulerInvocationHandler()
+                );
+            } catch (ClassNotFoundException e) {
+                // Return null if BukkitScheduler is not available
+                return null;
+            }
         }
 
-        @Override
-        public int scheduleSyncDelayedTask(org.bukkit.plugin.Plugin plugin, org.bukkit.scheduler.BukkitRunnable task, long delay) {
-            return scheduleSyncDelayedTask(plugin, (Runnable) task, delay);
-        }
-
-        @Override
-        public int scheduleSyncDelayedTask(org.bukkit.plugin.Plugin plugin, Runnable task) {
-            return scheduleSyncDelayedTask(plugin, task, 0);
-        }
-
-        @Override
-        public int scheduleSyncDelayedTask(org.bukkit.plugin.Plugin plugin, org.bukkit.scheduler.BukkitRunnable task) {
-            return scheduleSyncDelayedTask(plugin, task, 0);
-        }
-
-        @Override
-        public int scheduleSyncRepeatingTask(org.bukkit.plugin.Plugin plugin, Runnable task, long delay, long period) {
-            server.getScheduler().buildTask(plugin, task)
-                .delay(delay * 50, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .repeat(period * 50, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .schedule();
-            return 0;
-        }
-
-        @Override
-        public int scheduleSyncRepeatingTask(org.bukkit.plugin.Plugin plugin, org.bukkit.scheduler.BukkitRunnable task, long delay, long period) {
-            return scheduleSyncRepeatingTask(plugin, (Runnable) task, delay, period);
-        }
-
-        @Override
-        public int scheduleAsyncDelayedTask(org.bukkit.plugin.Plugin plugin, Runnable task, long delay) {
-            server.getScheduler().buildTask(plugin, task).delay(delay * 50, java.util.concurrent.TimeUnit.MILLISECONDS).schedule();
-            return 0;
-        }
-
-        @Override
-        public int scheduleAsyncDelayedTask(org.bukkit.plugin.Plugin plugin, Runnable task) {
-            return scheduleAsyncDelayedTask(plugin, task, 0);
-        }
-
-        @Override
-        public int scheduleAsyncRepeatingTask(org.bukkit.plugin.Plugin plugin, Runnable task, long delay, long period) {
-            server.getScheduler().buildTask(plugin, task)
-                .delay(delay * 50, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .repeat(period * 50, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .schedule();
-            return 0;
-        }
-
-        @Override
-        public <T> java.util.concurrent.Future<T> callSyncMethod(org.bukkit.plugin.Plugin plugin, java.util.concurrent.Callable<T> task) {
-            java.util.concurrent.CompletableFuture<T> future = new java.util.concurrent.CompletableFuture<>();
-            server.getScheduler().buildTask(plugin, () -> {
-                try {
-                    future.complete(task.call());
-                } catch (Exception e) {
-                    future.completeExceptionally(e);
+        private class SchedulerInvocationHandler implements InvocationHandler {
+            @Override
+            public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                String methodName = method.getName();
+                Class<?> returnType = method.getReturnType();
+                
+                if (args == null || args.length == 0) {
+                    return returnType.isPrimitive() ? (returnType == boolean.class ? false : 0) : null;
                 }
-            }).schedule();
-            return future;
-        }
-
-        @Override
-        public void cancelTask(int taskId) {
-            // Velocity tasks are managed differently
-        }
-
-        @Override
-        public void cancelTasks(org.bukkit.plugin.Plugin plugin) {
-            // Velocity tasks are managed differently
-        }
-
-        public void cancelAllTasks() {
-            // Velocity tasks are managed differently
-        }
-
-        @Override
-        public boolean isCurrentlyRunning(int taskId) {
-            return false;
-        }
-
-        @Override
-        public boolean isQueued(int taskId) {
-            return false;
-        }
-
-        @Override
-        public java.util.List<org.bukkit.scheduler.BukkitWorker> getActiveWorkers() {
-            return java.util.Collections.emptyList();
-        }
-
-        @Override
-        public java.util.List<org.bukkit.scheduler.BukkitTask> getPendingTasks() {
-            return java.util.Collections.emptyList();
-        }
-
-        @Override
-        public org.bukkit.scheduler.BukkitTask runTask(org.bukkit.plugin.Plugin plugin, Runnable task) throws IllegalArgumentException {
-            server.getScheduler().buildTask(plugin, task).schedule();
-            return null;
-        }
-
-        @Override
-        public org.bukkit.scheduler.BukkitTask runTask(org.bukkit.plugin.Plugin plugin, org.bukkit.scheduler.BukkitRunnable task) throws IllegalArgumentException {
-            return runTask(plugin, (Runnable) task);
-        }
-
-        @Override
-        public org.bukkit.scheduler.BukkitTask runTaskAsynchronously(org.bukkit.plugin.Plugin plugin, Runnable task) throws IllegalArgumentException {
-            server.getScheduler().buildTask(plugin, task).schedule();
-            return null;
-        }
-
-        @Override
-        public org.bukkit.scheduler.BukkitTask runTaskAsynchronously(org.bukkit.plugin.Plugin plugin, org.bukkit.scheduler.BukkitRunnable task) throws IllegalArgumentException {
-            return runTaskAsynchronously(plugin, (Runnable) task);
-        }
-
-        @Override
-        public org.bukkit.scheduler.BukkitTask runTaskLater(org.bukkit.plugin.Plugin plugin, Runnable task, long delay) throws IllegalArgumentException {
-            server.getScheduler().buildTask(plugin, task).delay(delay * 50, java.util.concurrent.TimeUnit.MILLISECONDS).schedule();
-            return null;
-        }
-
-        @Override
-        public org.bukkit.scheduler.BukkitTask runTaskLater(org.bukkit.plugin.Plugin plugin, org.bukkit.scheduler.BukkitRunnable task, long delay) throws IllegalArgumentException {
-            return runTaskLater(plugin, (Runnable) task, delay);
-        }
-
-        @Override
-        public org.bukkit.scheduler.BukkitTask runTaskLaterAsynchronously(org.bukkit.plugin.Plugin plugin, Runnable task, long delay) throws IllegalArgumentException {
-            server.getScheduler().buildTask(plugin, task).delay(delay * 50, java.util.concurrent.TimeUnit.MILLISECONDS).schedule();
-            return null;
-        }
-
-        @Override
-        public org.bukkit.scheduler.BukkitTask runTaskLaterAsynchronously(org.bukkit.plugin.Plugin plugin, org.bukkit.scheduler.BukkitRunnable task, long delay) throws IllegalArgumentException {
-            return runTaskLaterAsynchronously(plugin, (Runnable) task, delay);
-        }
-
-        @Override
-        public org.bukkit.scheduler.BukkitTask runTaskTimer(org.bukkit.plugin.Plugin plugin, Runnable task, long delay, long period) throws IllegalArgumentException {
-            server.getScheduler().buildTask(plugin, task)
-                .delay(delay * 50, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .repeat(period * 50, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .schedule();
-            return null;
-        }
-
-        @Override
-        public org.bukkit.scheduler.BukkitTask runTaskTimer(org.bukkit.plugin.Plugin plugin, org.bukkit.scheduler.BukkitRunnable task, long delay, long period) throws IllegalArgumentException {
-            return runTaskTimer(plugin, (Runnable) task, delay, period);
-        }
-
-        @Override
-        public org.bukkit.scheduler.BukkitTask runTaskTimerAsynchronously(org.bukkit.plugin.Plugin plugin, Runnable task, long delay, long period) throws IllegalArgumentException {
-            server.getScheduler().buildTask(plugin, task)
-                .delay(delay * 50, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .repeat(period * 50, java.util.concurrent.TimeUnit.MILLISECONDS)
-                .schedule();
-            return null;
-        }
-
-        @Override
-        public org.bukkit.scheduler.BukkitTask runTaskTimerAsynchronously(org.bukkit.plugin.Plugin plugin, org.bukkit.scheduler.BukkitRunnable task, long delay, long period) throws IllegalArgumentException {
-            return runTaskTimerAsynchronously(plugin, (Runnable) task, delay, period);
-        }
-
-        // Consumer-based methods (Bukkit API 1.13+)
-        @Override
-        public void runTask(org.bukkit.plugin.Plugin plugin, java.util.function.Consumer<org.bukkit.scheduler.BukkitTask> task) throws IllegalArgumentException {
-            runTask(plugin, (Runnable) () -> {
-                // Create a dummy task for Consumer
-                org.bukkit.scheduler.BukkitTask dummyTask = new org.bukkit.scheduler.BukkitTask() {
-                    @Override
-                    public int getTaskId() { return 0; }
-                    @Override
-                    public org.bukkit.plugin.Plugin getOwner() { return plugin; }
-                    @Override
-                    public boolean isSync() { return true; }
-                    @Override
-                    public boolean isCancelled() { return false; }
-                    @Override
-                    public void cancel() {}
-                };
-                task.accept(dummyTask);
-            });
-        }
-
-        @Override
-        public void runTaskAsynchronously(org.bukkit.plugin.Plugin plugin, java.util.function.Consumer<org.bukkit.scheduler.BukkitTask> task) throws IllegalArgumentException {
-            runTaskAsynchronously(plugin, (Runnable) () -> {
-                org.bukkit.scheduler.BukkitTask dummyTask = new org.bukkit.scheduler.BukkitTask() {
-                    @Override
-                    public int getTaskId() { return 0; }
-                    @Override
-                    public org.bukkit.plugin.Plugin getOwner() { return plugin; }
-                    @Override
-                    public boolean isSync() { return false; }
-                    @Override
-                    public boolean isCancelled() { return false; }
-                    @Override
-                    public void cancel() {}
-                };
-                task.accept(dummyTask);
-            });
-        }
-
-        @Override
-        public void runTaskLater(org.bukkit.plugin.Plugin plugin, java.util.function.Consumer<org.bukkit.scheduler.BukkitTask> task, long delay) throws IllegalArgumentException {
-            runTaskLater(plugin, (Runnable) () -> {
-                org.bukkit.scheduler.BukkitTask dummyTask = new org.bukkit.scheduler.BukkitTask() {
-                    @Override
-                    public int getTaskId() { return 0; }
-                    @Override
-                    public org.bukkit.plugin.Plugin getOwner() { return plugin; }
-                    @Override
-                    public boolean isSync() { return true; }
-                    @Override
-                    public boolean isCancelled() { return false; }
-                    @Override
-                    public void cancel() {}
-                };
-                task.accept(dummyTask);
-            }, delay);
-        }
-
-        @Override
-        public void runTaskLaterAsynchronously(org.bukkit.plugin.Plugin plugin, java.util.function.Consumer<org.bukkit.scheduler.BukkitTask> task, long delay) throws IllegalArgumentException {
-            runTaskLaterAsynchronously(plugin, (Runnable) () -> {
-                org.bukkit.scheduler.BukkitTask dummyTask = new org.bukkit.scheduler.BukkitTask() {
-                    @Override
-                    public int getTaskId() { return 0; }
-                    @Override
-                    public org.bukkit.plugin.Plugin getOwner() { return plugin; }
-                    @Override
-                    public boolean isSync() { return false; }
-                    @Override
-                    public boolean isCancelled() { return false; }
-                    @Override
-                    public void cancel() {}
-                };
-                task.accept(dummyTask);
-            }, delay);
-        }
-
-        @Override
-        public void runTaskTimer(org.bukkit.plugin.Plugin plugin, java.util.function.Consumer<org.bukkit.scheduler.BukkitTask> task, long delay, long period) throws IllegalArgumentException {
-            runTaskTimer(plugin, (Runnable) () -> {
-                org.bukkit.scheduler.BukkitTask dummyTask = new org.bukkit.scheduler.BukkitTask() {
-                    @Override
-                    public int getTaskId() { return 0; }
-                    @Override
-                    public org.bukkit.plugin.Plugin getOwner() { return plugin; }
-                    @Override
-                    public boolean isSync() { return true; }
-                    @Override
-                    public boolean isCancelled() { return false; }
-                    @Override
-                    public void cancel() {}
-                };
-                task.accept(dummyTask);
-            }, delay, period);
-        }
-
-        @Override
-        public void runTaskTimerAsynchronously(org.bukkit.plugin.Plugin plugin, java.util.function.Consumer<org.bukkit.scheduler.BukkitTask> task, long delay, long period) throws IllegalArgumentException {
-            runTaskTimerAsynchronously(plugin, (Runnable) () -> {
-                org.bukkit.scheduler.BukkitTask dummyTask = new org.bukkit.scheduler.BukkitTask() {
-                    @Override
-                    public int getTaskId() { return 0; }
-                    @Override
-                    public org.bukkit.plugin.Plugin getOwner() { return plugin; }
-                    @Override
-                    public boolean isSync() { return false; }
-                    @Override
-                    public boolean isCancelled() { return false; }
-                    @Override
-                    public void cancel() {}
-                };
-                task.accept(dummyTask);
-            }, delay, period);
+                
+                Object plugin = args[0];
+                Runnable task = null;
+                
+                if (args.length > 1) {
+                    if (args[1] instanceof Runnable) {
+                        task = (Runnable) args[1];
+                    } else {
+                        try {
+                            Class<?> bukkitRunnableClass = Class.forName("org.bukkit.scheduler.BukkitRunnable");
+                            if (bukkitRunnableClass.isInstance(args[1])) {
+                                task = (Runnable) args[1];
+                            }
+                        } catch (ClassNotFoundException e) {
+                            // Ignore
+                        }
+                    }
+                }
+                
+                if (task == null) {
+                    return returnType.isPrimitive() ? (returnType == boolean.class ? false : 0) : null;
+                }
+                
+                long delay = 0;
+                long period = 0;
+                
+                if (args.length > 2) {
+                    delay = ((Number) args[2]).longValue() * 50;
+                }
+                if (args.length > 3) {
+                    period = ((Number) args[3]).longValue() * 50;
+                }
+                
+                if (methodName.contains("Timer") && period > 0) {
+                    server.getScheduler().buildTask(plugin, task)
+                        .delay(delay, java.util.concurrent.TimeUnit.MILLISECONDS)
+                        .repeat(period, java.util.concurrent.TimeUnit.MILLISECONDS)
+                        .schedule();
+                } else if (delay > 0) {
+                    server.getScheduler().buildTask(plugin, task)
+                        .delay(delay, java.util.concurrent.TimeUnit.MILLISECONDS)
+                        .schedule();
+                } else {
+                    server.getScheduler().buildTask(plugin, task).schedule();
+                }
+                
+                return null;
+            }
         }
     }
 }
-

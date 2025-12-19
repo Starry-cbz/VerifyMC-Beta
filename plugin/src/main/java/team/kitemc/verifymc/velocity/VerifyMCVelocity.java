@@ -90,10 +90,28 @@ public class VerifyMCVelocity {
         PluginAdapter pluginAdapter = new PluginAdapter(this);
 
         // Initialize services using adapter
-        codeService = new VerifyCodeService(pluginAdapter);
-        mailService = new MailService(pluginAdapter, this::getMessage);
-        authmeService = new AuthmeService(pluginAdapter);
-        versionCheckService = new VersionCheckService(pluginAdapter);
+        // Cast pluginAdapter to Plugin interface using reflection
+        Object pluginObj = pluginAdapter.getPluginProxy();
+        if (pluginObj == null) {
+            logger.error("Failed to create Plugin proxy, plugin may not work correctly");
+            return;
+        }
+        
+        try {
+            Class<?> pluginClass = Class.forName("org.bukkit.plugin.Plugin");
+            if (!pluginClass.isInstance(pluginObj)) {
+                logger.error("Plugin proxy does not implement Plugin interface");
+                return;
+            }
+            org.bukkit.plugin.Plugin plugin = (org.bukkit.plugin.Plugin) pluginObj;
+            codeService = new VerifyCodeService(plugin);
+            mailService = new MailService(plugin, this::getMessage);
+            authmeService = new AuthmeService(plugin);
+            versionCheckService = new VersionCheckService(plugin);
+        } catch (ClassNotFoundException e) {
+            logger.error("Bukkit Plugin class not found: " + e.getMessage());
+            return;
+        }
 
         // Start web server
         int port = (Integer) config.getOrDefault("web_port", 8080);
@@ -101,7 +119,20 @@ public class VerifyMCVelocity {
         String theme = (String) config.getOrDefault("frontend.theme", "default");
         String staticDir = dataDirectory.resolve("static").resolve(theme).toString();
 
-        wsServer = new ReviewWebSocketServer(wsPort, pluginAdapter);
+        try {
+            Class<?> pluginClass = Class.forName("org.bukkit.plugin.Plugin");
+            Object pluginObj2 = pluginAdapter.getPluginProxy();
+            if (pluginClass.isInstance(pluginObj2)) {
+                org.bukkit.plugin.Plugin plugin2 = (org.bukkit.plugin.Plugin) pluginObj2;
+                wsServer = new ReviewWebSocketServer(wsPort, plugin2);
+            } else {
+                logger.error("Plugin proxy does not implement Plugin interface");
+                return;
+            }
+        } catch (ClassNotFoundException e) {
+            logger.error("Failed to create WebSocket server: " + e.getMessage());
+            return;
+        }
         try {
             wsServer.start();
             logger.info(getMessage("websocket.start_success") + ": " + wsPort);
@@ -109,7 +140,20 @@ public class VerifyMCVelocity {
             logger.warn(getMessage("websocket.start_failed") + ": " + e.getMessage());
         }
 
-        webServer = new WebServer(port, staticDir, pluginAdapter, codeService, mailService, userDao, auditDao, authmeService, wsServer, messages);
+        try {
+            Class<?> pluginClass = Class.forName("org.bukkit.plugin.Plugin");
+            Object pluginObj3 = pluginAdapter.getPluginProxy();
+            if (pluginClass.isInstance(pluginObj3)) {
+                org.bukkit.plugin.Plugin plugin3 = (org.bukkit.plugin.Plugin) pluginObj3;
+                webServer = new WebServer(port, staticDir, plugin3, codeService, mailService, userDao, auditDao, authmeService, wsServer, messages);
+            } else {
+                logger.error("Plugin proxy does not implement Plugin interface");
+                return;
+            }
+        } catch (ClassNotFoundException e) {
+            logger.error("Failed to create Web server: " + e.getMessage());
+            return;
+        }
         try {
             webServer.start();
             logger.info(getMessage("web.start_success") + ": " + port);
@@ -244,33 +288,51 @@ public class VerifyMCVelocity {
     private void initializeStorage() {
         String storageType = (String) config.getOrDefault("storage.type", "data");
         PluginAdapter pluginAdapter = new PluginAdapter(this);
+        Object pluginObj = pluginAdapter.getPluginProxy();
+        
+        if (pluginObj == null) {
+            logger.error("Failed to create Plugin proxy for storage initialization");
+            return;
+        }
 
-        if ("mysql".equalsIgnoreCase(storageType)) {
-            Properties mysqlConfig = new Properties();
-            @SuppressWarnings("unchecked")
-            Map<String, Object> mysqlSettings = (Map<String, Object>) config.getOrDefault("storage.mysql", Collections.emptyMap());
-            mysqlConfig.setProperty("host", (String) mysqlSettings.getOrDefault("host", "localhost"));
-            mysqlConfig.setProperty("port", String.valueOf(mysqlSettings.getOrDefault("port", 3306)));
-            mysqlConfig.setProperty("database", (String) mysqlSettings.getOrDefault("database", "verifymc"));
-            mysqlConfig.setProperty("user", (String) mysqlSettings.getOrDefault("user", "root"));
-            mysqlConfig.setProperty("password", (String) mysqlSettings.getOrDefault("password", ""));
-
-            try {
-                userDao = new MysqlUserDao(mysqlConfig, messages, pluginAdapter);
-                auditDao = new MysqlAuditDao(mysqlConfig);
-                logger.info(getMessage("storage.mysql.enabled"));
-            } catch (Exception e) {
-                logger.error(getMessage("storage.migrate.fail").replace("{0}", e.getMessage()));
+        try {
+            Class<?> pluginClass = Class.forName("org.bukkit.plugin.Plugin");
+            if (!pluginClass.isInstance(pluginObj)) {
+                logger.error("Plugin proxy does not implement Plugin interface");
                 return;
             }
-        } else {
-            File userFile = dataDirectory.resolve("data").resolve("users.json").toFile();
-            File auditFile = dataDirectory.resolve("data").resolve("audits.json").toFile();
-            userFile.getParentFile().mkdirs();
-            auditFile.getParentFile().mkdirs();
-            userDao = new FileUserDao(userFile, pluginAdapter);
-            auditDao = new FileAuditDao(auditFile);
-            logger.info(getMessage("storage.file.enabled"));
+            org.bukkit.plugin.Plugin plugin = (org.bukkit.plugin.Plugin) pluginObj;
+
+            if ("mysql".equalsIgnoreCase(storageType)) {
+                Properties mysqlConfig = new Properties();
+                @SuppressWarnings("unchecked")
+                Map<String, Object> mysqlSettings = (Map<String, Object>) config.getOrDefault("storage.mysql", Collections.emptyMap());
+                mysqlConfig.setProperty("host", (String) mysqlSettings.getOrDefault("host", "localhost"));
+                mysqlConfig.setProperty("port", String.valueOf(mysqlSettings.getOrDefault("port", 3306)));
+                mysqlConfig.setProperty("database", (String) mysqlSettings.getOrDefault("database", "verifymc"));
+                mysqlConfig.setProperty("user", (String) mysqlSettings.getOrDefault("user", "root"));
+                mysqlConfig.setProperty("password", (String) mysqlSettings.getOrDefault("password", ""));
+
+                try {
+                    userDao = new MysqlUserDao(mysqlConfig, messages, plugin);
+                    auditDao = new MysqlAuditDao(mysqlConfig);
+                    logger.info(getMessage("storage.mysql.enabled"));
+                } catch (Exception e) {
+                    logger.error(getMessage("storage.migrate.fail").replace("{0}", e.getMessage()));
+                    return;
+                }
+            } else {
+                File userFile = dataDirectory.resolve("data").resolve("users.json").toFile();
+                File auditFile = dataDirectory.resolve("data").resolve("audits.json").toFile();
+                userFile.getParentFile().mkdirs();
+                auditFile.getParentFile().mkdirs();
+                userDao = new FileUserDao(userFile, plugin);
+                auditDao = new FileAuditDao(auditFile);
+                logger.info(getMessage("storage.file.enabled"));
+            }
+        } catch (ClassNotFoundException e) {
+            logger.error("Bukkit Plugin class not found: " + e.getMessage());
+            return;
         }
     }
 
