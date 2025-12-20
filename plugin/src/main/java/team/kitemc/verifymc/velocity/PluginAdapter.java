@@ -41,8 +41,8 @@ public class PluginAdapter {
             );
         } catch (ClassNotFoundException e) {
             // In Velocity environment, Bukkit classes are not available at runtime
-            // Create a minimal proxy that implements the methods we need
-            velocityPlugin.getLogger().warn("Bukkit Plugin interface not available, creating compatibility proxy");
+            // This is expected and normal - create a compatibility proxy
+            velocityPlugin.getLogger().debug("Bukkit Plugin interface not available in Velocity environment, creating compatibility proxy");
             return createCompatibilityProxy();
         }
     }
