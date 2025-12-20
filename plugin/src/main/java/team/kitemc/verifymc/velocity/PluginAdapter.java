@@ -1,8 +1,5 @@
 package team.kitemc.verifymc.velocity;
 
-import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.configuration.file.YamlConfiguration;
-
 import java.io.*;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
@@ -18,7 +15,7 @@ import java.nio.file.Path;
 public class PluginAdapter {
     private final VerifyMCVelocity velocityPlugin;
     private final com.velocitypowered.api.proxy.ProxyServer server;
-    private FileConfiguration config;
+    private Object config; // Use Object to avoid compile-time dependency on FileConfiguration
     private final Path dataDirectory;
     private Object pluginProxy;
 
@@ -94,18 +91,248 @@ public class PluginAdapter {
         return dataDirectory.toFile();
     }
 
-    public FileConfiguration getConfig() {
+    /**
+     * Get config using reflection to avoid compile-time dependency
+     * Returns a proxy object that implements FileConfiguration interface methods
+     */
+    public Object getConfig() {
         if (config == null) {
             reloadConfig();
         }
+        
+        // If config is a HashMap (Bukkit classes not available), create a proxy
+        if (config instanceof java.util.HashMap) {
+            return createConfigProxy((java.util.HashMap<String, Object>) config);
+        }
+        
+        // If config is already a FileConfiguration object, return it
+        // Try to check if it's a FileConfiguration using reflection
+        try {
+            Class<?> fileConfigClass = Class.forName("org.bukkit.configuration.file.FileConfiguration");
+            if (fileConfigClass.isInstance(config)) {
+                return config;
+            }
+        } catch (ClassNotFoundException e) {
+            // FileConfiguration class not available, create proxy from HashMap
+            if (config instanceof java.util.HashMap) {
+                return createConfigProxy((java.util.HashMap<String, Object>) config);
+            }
+            // If config is not a HashMap, create a new one
+            return createConfigProxy(new java.util.HashMap<String, Object>());
+        }
+        
         return config;
+    }
+    
+    /**
+     * Create a proxy for FileConfiguration interface
+     * Uses reflection to avoid compile-time dependency
+     */
+    private Object createConfigProxy(java.util.HashMap<String, Object> configMap) {
+        try {
+            // Try to load FileConfiguration class using reflection
+            Class<?> fileConfigClass = Class.forName("org.bukkit.configuration.file.FileConfiguration");
+            return Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class[]{fileConfigClass},
+                new ConfigInvocationHandler(configMap)
+            );
+        } catch (ClassNotFoundException e) {
+            // FileConfiguration not available in Velocity environment
+            // Return a wrapper object that implements the methods we need
+            return new ConfigWrapper(configMap);
+        }
+    }
+    
+    /**
+     * Wrapper class for config when FileConfiguration interface is not available
+     */
+    private static class ConfigWrapper {
+        private final java.util.HashMap<String, Object> configMap;
+        
+        public ConfigWrapper(java.util.HashMap<String, Object> configMap) {
+            this.configMap = configMap;
+        }
+        
+        public String getString(String key) {
+            return getString(key, "");
+        }
+        
+        public String getString(String key, String defaultValue) {
+            Object value = getNestedValue(configMap, key);
+            return value != null ? value.toString() : defaultValue;
+        }
+        
+        public int getInt(String key) {
+            return getInt(key, 0);
+        }
+        
+        public int getInt(String key, int defaultValue) {
+            Object value = getNestedValue(configMap, key);
+            if (value instanceof Number) {
+                return ((Number) value).intValue();
+            }
+            return defaultValue;
+        }
+        
+        public boolean getBoolean(String key) {
+            return getBoolean(key, false);
+        }
+        
+        public boolean getBoolean(String key, boolean defaultValue) {
+            Object value = getNestedValue(configMap, key);
+            if (value instanceof Boolean) {
+                return (Boolean) value;
+            }
+            if (value instanceof String) {
+                return Boolean.parseBoolean((String) value);
+            }
+            return defaultValue;
+        }
+        
+        public java.util.List<String> getStringList(String key) {
+            Object value = getNestedValue(configMap, key);
+            if (value instanceof java.util.List) {
+                return (java.util.List<String>) value;
+            }
+            return java.util.Collections.emptyList();
+        }
+        
+        private Object getNestedValue(java.util.Map<String, Object> map, String key) {
+            if (key.contains(".")) {
+                String[] parts = key.split("\\.", 2);
+                Object value = map.get(parts[0]);
+                if (value instanceof java.util.Map) {
+                    return getNestedValue((java.util.Map<String, Object>) value, parts[1]);
+                }
+                return null;
+            }
+            return map.get(key);
+        }
+    }
+    
+    /**
+     * Invocation handler for FileConfiguration proxy
+     */
+    private class ConfigInvocationHandler implements InvocationHandler {
+        private final java.util.HashMap<String, Object> configMap;
+        
+        public ConfigInvocationHandler(java.util.HashMap<String, Object> configMap) {
+            this.configMap = configMap;
+        }
+        
+        @Override
+        public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+            String methodName = method.getName();
+            
+            // Handle common FileConfiguration methods
+            if (methodName.equals("getString") && args != null && args.length > 0) {
+                String key = (String) args[0];
+                String defaultValue = args.length > 1 ? (String) args[1] : null;
+                Object value = getNestedValue(configMap, key);
+                return value != null ? value.toString() : (defaultValue != null ? defaultValue : "");
+            }
+            
+            if (methodName.equals("getInt") && args != null && args.length > 0) {
+                String key = (String) args[0];
+                int defaultValue = args.length > 1 ? (Integer) args[1] : 0;
+                Object value = getNestedValue(configMap, key);
+                if (value instanceof Number) {
+                    return ((Number) value).intValue();
+                }
+                return defaultValue;
+            }
+            
+            if (methodName.equals("getBoolean") && args != null && args.length > 0) {
+                String key = (String) args[0];
+                boolean defaultValue = args.length > 1 ? (Boolean) args[1] : false;
+                Object value = getNestedValue(configMap, key);
+                if (value instanceof Boolean) {
+                    return (Boolean) value;
+                }
+                if (value instanceof String) {
+                    return Boolean.parseBoolean((String) value);
+                }
+                return defaultValue;
+            }
+            
+            if (methodName.equals("getStringList") && args != null && args.length > 0) {
+                String key = (String) args[0];
+                Object value = getNestedValue(configMap, key);
+                if (value instanceof java.util.List) {
+                    return value;
+                }
+                return java.util.Collections.emptyList();
+            }
+            
+            if (methodName.equals("save") && args != null && args.length > 0) {
+                // Save config to file
+                try {
+                    Path configFile = dataDirectory.resolve("config.yml");
+                    org.yaml.snakeyaml.Yaml yaml = new org.yaml.snakeyaml.Yaml();
+                    try (FileWriter writer = new FileWriter(configFile.toFile())) {
+                        yaml.dump(configMap, writer);
+                    }
+                } catch (Exception e) {
+                    getLogger().warning("Failed to save config: " + e.getMessage());
+                }
+                return null;
+            }
+            
+            // Return default value based on return type
+            Class<?> returnType = method.getReturnType();
+            if (returnType.isPrimitive()) {
+                if (returnType == boolean.class) return false;
+                if (returnType == int.class) return 0;
+                if (returnType == long.class) return 0L;
+                if (returnType == double.class) return 0.0;
+                if (returnType == float.class) return 0.0f;
+            }
+            return null;
+        }
+        
+        /**
+         * Get nested value from map using dot notation (e.g., "storage.mysql.host")
+         */
+        private Object getNestedValue(java.util.Map<String, Object> map, String key) {
+            if (key.contains(".")) {
+                String[] parts = key.split("\\.", 2);
+                Object value = map.get(parts[0]);
+                if (value instanceof java.util.Map) {
+                    return getNestedValue((java.util.Map<String, Object>) value, parts[1]);
+                }
+                return null;
+            }
+            return map.get(key);
+        }
     }
 
     public void saveConfig() {
         try {
             Path configFile = dataDirectory.resolve("config.yml");
             if (config != null) {
-                config.save(configFile.toFile());
+                // If config is a HashMap, save using SnakeYAML
+                if (config instanceof java.util.HashMap) {
+                    org.yaml.snakeyaml.Yaml yaml = new org.yaml.snakeyaml.Yaml();
+                    try (FileWriter writer = new FileWriter(configFile.toFile())) {
+                        yaml.dump(config, writer);
+                    }
+                } else {
+                    // Use reflection to call save method for FileConfiguration
+                    try {
+                        Method saveMethod = config.getClass().getMethod("save", File.class);
+                        saveMethod.invoke(config, configFile.toFile());
+                    } catch (NoSuchMethodException e) {
+                        // If save method doesn't exist, try using SnakeYAML
+                        org.yaml.snakeyaml.Yaml yaml = new org.yaml.snakeyaml.Yaml();
+                        try (FileWriter writer = new FileWriter(configFile.toFile())) {
+                            // Try to convert config to Map
+                            if (config instanceof java.util.Map) {
+                                yaml.dump(config, writer);
+                            }
+                        }
+                    }
+                }
             }
         } catch (Exception e) {
             getLogger().warning("Failed to save config: " + e.getMessage());
@@ -142,17 +369,62 @@ public class PluginAdapter {
 
     public void reloadConfig() {
         Path configFile = dataDirectory.resolve("config.yml");
+        
+        // In Velocity environment, Bukkit configuration classes are not available
+        // Always use SnakeYAML directly to avoid ClassNotFoundException
+        java.util.HashMap<String, Object> configMap = new java.util.HashMap<>();
+        
         if (Files.exists(configFile)) {
             try (InputStream inputStream = Files.newInputStream(configFile)) {
-                config = YamlConfiguration.loadConfiguration(new InputStreamReader(inputStream, java.nio.charset.StandardCharsets.UTF_8));
-            } catch (IOException e) {
-                getLogger().warning("Failed to reload config: " + e.getMessage());
-                config = new YamlConfiguration();
+                org.yaml.snakeyaml.Yaml yaml = new org.yaml.snakeyaml.Yaml();
+                Object loaded = yaml.load(inputStream);
+                if (loaded instanceof java.util.Map) {
+                    @SuppressWarnings("unchecked")
+                    java.util.Map<String, Object> loadedMap = (java.util.Map<String, Object>) loaded;
+                    configMap.putAll(loadedMap);
+                }
+            } catch (Exception ex) {
+                getLogger().warning("Failed to load config file: " + ex.getMessage());
             }
         } else {
-            config = new YamlConfiguration();
             saveDefaultConfig();
-            reloadConfig();
+            // Try to load default config
+            try (InputStream defaultConfig = getClass().getClassLoader().getResourceAsStream("config.yml")) {
+                if (defaultConfig != null) {
+                    org.yaml.snakeyaml.Yaml yaml = new org.yaml.snakeyaml.Yaml();
+                    Object loaded = yaml.load(defaultConfig);
+                    if (loaded instanceof java.util.Map) {
+                        @SuppressWarnings("unchecked")
+                        java.util.Map<String, Object> loadedMap = (java.util.Map<String, Object>) loaded;
+                        configMap.putAll(loadedMap);
+                    }
+                }
+            } catch (Exception ex) {
+                getLogger().warning("Failed to load default config: " + ex.getMessage());
+            }
+        }
+        
+        config = configMap;
+        
+        // Try to create FileConfiguration proxy if Bukkit classes are available (for Bukkit servers)
+        // This is optional and won't cause errors if classes are not available
+        try {
+            Class<?> yamlConfigClass = Class.forName("org.bukkit.configuration.file.YamlConfiguration");
+            if (Files.exists(configFile)) {
+                try (InputStream inputStream = Files.newInputStream(configFile)) {
+                    Method loadMethod = yamlConfigClass.getMethod("loadConfiguration", Reader.class);
+                    Object bukkitConfig = loadMethod.invoke(null, new InputStreamReader(inputStream, java.nio.charset.StandardCharsets.UTF_8));
+                    if (bukkitConfig != null) {
+                        config = bukkitConfig; // Use Bukkit config if available
+                    }
+                } catch (Exception e) {
+                    // Ignore, use HashMap config
+                }
+            }
+        } catch (ClassNotFoundException e) {
+            // Bukkit classes not available, use HashMap config (already set above)
+        } catch (Exception e) {
+            // Ignore, use HashMap config
         }
     }
 
