@@ -12,6 +12,7 @@ import java.nio.file.Path;
  * Uses dynamic proxy to avoid compile-time dependency on Bukkit Plugin interface
  * This prevents ClassNotFoundException in Velocity environment
  */
+@SuppressWarnings({"unchecked", "unused"})
 public class PluginAdapter {
     private final VerifyMCVelocity velocityPlugin;
     private final com.velocitypowered.api.proxy.ProxyServer server;
@@ -71,7 +72,6 @@ public class PluginAdapter {
      * Cast to Plugin interface (for use with Bukkit-based services)
      * Returns null if Bukkit classes are not available
      */
-    @SuppressWarnings("unchecked")
     public <T> T asPlugin(Class<T> pluginClass) {
         if (pluginProxy != null && pluginClass.isInstance(pluginProxy)) {
             return (T) pluginProxy;
@@ -379,7 +379,6 @@ public class PluginAdapter {
                 org.yaml.snakeyaml.Yaml yaml = new org.yaml.snakeyaml.Yaml();
                 Object loaded = yaml.load(inputStream);
                 if (loaded instanceof java.util.Map) {
-                    @SuppressWarnings("unchecked")
                     java.util.Map<String, Object> loadedMap = (java.util.Map<String, Object>) loaded;
                     configMap.putAll(loadedMap);
                 }
@@ -394,7 +393,6 @@ public class PluginAdapter {
                     org.yaml.snakeyaml.Yaml yaml = new org.yaml.snakeyaml.Yaml();
                     Object loaded = yaml.load(defaultConfig);
                     if (loaded instanceof java.util.Map) {
-                        @SuppressWarnings("unchecked")
                         java.util.Map<String, Object> loadedMap = (java.util.Map<String, Object>) loaded;
                         configMap.putAll(loadedMap);
                     }

@@ -53,8 +53,10 @@ public class VerifyMCVelocity {
     private VerifyCodeService codeService;
     private MailService mailService;
     private AuthmeService authmeService;
+    @SuppressWarnings("unused")
     private VersionCheckService versionCheckService;
     private Map<String, Object> config;
+    @SuppressWarnings("unused")
     private String whitelistMode;
     private String webRegisterUrl;
     private boolean debug = false;
