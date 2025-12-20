@@ -11,12 +11,12 @@ public class FileUserDao implements UserDao {
     private final Map<String, Map<String, Object>> users = new ConcurrentHashMap<>();
     private final Gson gson = new Gson();
     private final boolean debug;
-    private final org.bukkit.plugin.Plugin plugin;
+    private final Object plugin;
 
-    public FileUserDao(File dataFile, org.bukkit.plugin.Plugin plugin) {
+    public FileUserDao(File dataFile, Object plugin) {
         this.file = dataFile;
         this.plugin = plugin;
-        this.debug = plugin.getConfig().getBoolean("debug", false);
+        this.debug = getPluginConfigBoolean("debug", false);
         load();
     }
 
@@ -28,7 +28,45 @@ public class FileUserDao implements UserDao {
     }
 
     private void debugLog(String msg) {
-        if (debug && plugin != null) plugin.getLogger().info("[DEBUG] FileUserDao: " + msg);
+        if (!debug) return;
+        String out = "[DEBUG] FileUserDao: " + msg;
+        if (plugin != null) {
+            try {
+                java.lang.reflect.Method getLogger = plugin.getClass().getMethod("getLogger");
+                Object logger = getLogger.invoke(plugin);
+                if (logger != null) {
+                    try {
+                        java.lang.reflect.Method info = logger.getClass().getMethod("info", String.class);
+                        info.invoke(logger, out);
+                        return;
+                    } catch (NoSuchMethodException ignored) { }
+                }
+            } catch (Exception ignored) { }
+        }
+        System.out.println(out);
+    }
+
+    private boolean getPluginConfigBoolean(String key, boolean defaultValue) {
+        if (plugin == null) return defaultValue;
+        try {
+            java.lang.reflect.Method getConfig = plugin.getClass().getMethod("getConfig");
+            Object cfg = getConfig.invoke(plugin);
+            if (cfg == null) return defaultValue;
+            try {
+                java.lang.reflect.Method getBoolean = cfg.getClass().getMethod("getBoolean", String.class, boolean.class);
+                return (Boolean) getBoolean.invoke(cfg, key, defaultValue);
+            } catch (NoSuchMethodException ex) {
+                try {
+                    java.lang.reflect.Method getBoolean2 = cfg.getClass().getMethod("getBoolean", String.class);
+                    Object res = getBoolean2.invoke(cfg, key);
+                    return res instanceof Boolean ? (Boolean) res : defaultValue;
+                } catch (Exception ignored) {
+                    return defaultValue;
+                }
+            }
+        } catch (Exception e) {
+            return defaultValue;
+        }
     }
     
     /**

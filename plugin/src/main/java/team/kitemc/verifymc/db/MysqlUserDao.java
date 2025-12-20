@@ -2,19 +2,18 @@ package team.kitemc.verifymc.db;
 
 import java.sql.*;
 import java.util.*;
-import org.bukkit.plugin.Plugin;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MysqlUserDao implements UserDao {
     private final Connection conn;
     private final ResourceBundle messages;
     private final boolean debug;
-    private final Plugin plugin;
+    private final Object plugin;
 
-    public MysqlUserDao(Properties mysqlConfig, ResourceBundle messages, Plugin plugin) throws SQLException {
+    public MysqlUserDao(Properties mysqlConfig, ResourceBundle messages, Object plugin) throws SQLException {
         this.messages = messages;
         this.plugin = plugin;
-        this.debug = plugin.getConfig().getBoolean("debug", false);
+        this.debug = getPluginConfigBoolean("debug", false);
         String url = "jdbc:mysql://" + mysqlConfig.getProperty("host") + ":" +
                 mysqlConfig.getProperty("port") + "/" +
                 mysqlConfig.getProperty("database") + "?useSSL=false&characterEncoding=utf8";
@@ -75,7 +74,45 @@ public class MysqlUserDao implements UserDao {
     }
 
     private void debugLog(String msg) {
-        if (debug) plugin.getLogger().info("[DEBUG] MysqlUserDao: " + msg);
+        if (!debug) return;
+        String out = "[DEBUG] MysqlUserDao: " + msg;
+        if (plugin != null) {
+            try {
+                java.lang.reflect.Method getLogger = plugin.getClass().getMethod("getLogger");
+                Object logger = getLogger.invoke(plugin);
+                if (logger != null) {
+                    try {
+                        java.lang.reflect.Method info = logger.getClass().getMethod("info", String.class);
+                        info.invoke(logger, out);
+                        return;
+                    } catch (NoSuchMethodException ignored) { }
+                }
+            } catch (Exception ignored) { }
+        }
+        System.out.println(out);
+    }
+
+    private boolean getPluginConfigBoolean(String key, boolean defaultValue) {
+        if (plugin == null) return defaultValue;
+        try {
+            java.lang.reflect.Method getConfig = plugin.getClass().getMethod("getConfig");
+            Object cfg = getConfig.invoke(plugin);
+            if (cfg == null) return defaultValue;
+            try {
+                java.lang.reflect.Method getBoolean = cfg.getClass().getMethod("getBoolean", String.class, boolean.class);
+                return (Boolean) getBoolean.invoke(cfg, key, defaultValue);
+            } catch (NoSuchMethodException ex) {
+                try {
+                    java.lang.reflect.Method getBoolean2 = cfg.getClass().getMethod("getBoolean", String.class);
+                    Object res = getBoolean2.invoke(cfg, key);
+                    return res instanceof Boolean ? (Boolean) res : defaultValue;
+                } catch (Exception ignored) {
+                    return defaultValue;
+                }
+            }
+        } catch (Exception e) {
+            return defaultValue;
+        }
     }
 
     @Override
