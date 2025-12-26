@@ -95,8 +95,15 @@ public class VerifyMCVelocity {
         // Use reflection to initialize services to avoid compile-time dependency on Bukkit Plugin interface
         Object pluginObj = pluginAdapter.getPluginProxy();
         if (pluginObj == null) {
-            logger.error("Failed to create Plugin proxy, plugin may not work correctly");
-            return;
+            logger.warn("Plugin proxy creation failed, running in limited compatibility mode");
+        }
+
+        // Detect whether Bukkit Plugin API is available in classpath
+        boolean bukkitAvailable = true;
+        try {
+            Class.forName("org.bukkit.plugin.Plugin");
+        } catch (ClassNotFoundException e) {
+            bukkitAvailable = false;
         }
         
         // Initialize services using reflection
@@ -153,77 +160,40 @@ public class VerifyMCVelocity {
             }
         }
 
-        // Start web server
+        // Start web server only if Bukkit API available (avoid loading Bukkit-dependent classes on Velocity)
         int port = (Integer) config.getOrDefault("web_port", 8080);
         int wsPort = (Integer) config.getOrDefault("ws_port", port + 1);
         String theme = (String) config.getOrDefault("frontend.theme", "default");
         String staticDir = dataDirectory.resolve("static").resolve(theme).toString();
 
-        // Initialize WebSocket server using reflection
-        try {
-            Class<?> wsServerClass = Class.forName("team.kitemc.verifymc.web.ReviewWebSocketServer");
-            Object pluginObj2 = pluginAdapter.getPluginProxy();
-            wsServer = (ReviewWebSocketServer) wsServerClass.getConstructor(int.class, Object.class)
-                .newInstance(wsPort, pluginObj2);
-        } catch (ClassNotFoundException e) {
-            // Try with Bukkit Plugin interface if available
+        if (!bukkitAvailable) {
+            logger.info("Running under Velocity: skipping Bukkit-dependent WebServer and WebSocket initialization");
+        } else {
+            // Initialize WebSocket server using reflection
             try {
-                Class<?> pluginClass = Class.forName("org.bukkit.plugin.Plugin");
+                Class<?> wsServerClass = Class.forName("team.kitemc.verifymc.web.ReviewWebSocketServer");
                 Object pluginObj2 = pluginAdapter.getPluginProxy();
-                if (pluginClass.isInstance(pluginObj2)) {
-                    wsServer = new ReviewWebSocketServer(wsPort, (org.bukkit.plugin.Plugin) pluginObj2);
-                } else {
-                    logger.warn("Failed to create WebSocket server: Plugin proxy does not implement Plugin interface");
-                    return;
-                }
-            } catch (ClassNotFoundException cnfe) {
-                logger.debug("Bukkit Plugin class not available, WebSocket server may not work correctly");
-                return;
+                wsServer = (ReviewWebSocketServer) wsServerClass.getConstructor(int.class, Object.class)
+                    .newInstance(wsPort, pluginObj2);
+                wsServer.start();
+                logger.info(getMessage("websocket.start_success") + ": " + wsPort);
+            } catch (Exception e) {
+                logger.warn("Failed to create/start WebSocket server: " + e.getMessage());
             }
-        } catch (Exception e) {
-            logger.warn("Failed to create WebSocket server: " + e.getMessage());
-            return;
-        }
-        try {
-            wsServer.start();
-            logger.info(getMessage("websocket.start_success") + ": " + wsPort);
-        } catch (Exception e) {
-            logger.warn(getMessage("websocket.start_failed") + ": " + e.getMessage());
-        }
 
-        // Initialize Web server using reflection
-        try {
-            Class<?> webServerClass = Class.forName("team.kitemc.verifymc.web.WebServer");
-            Object pluginObj3 = pluginAdapter.getPluginProxy();
-            webServer = (WebServer) webServerClass.getConstructor(int.class, String.class, Object.class,
-                VerifyCodeService.class, MailService.class, UserDao.class, AuditDao.class,
-                AuthmeService.class, ReviewWebSocketServer.class, ResourceBundle.class)
-                .newInstance(port, staticDir, pluginObj3, codeService, mailService, userDao, auditDao, authmeService, wsServer, messages);
-        } catch (ClassNotFoundException e) {
-            // Try with Bukkit Plugin interface if available
+            // Initialize Web server using reflection
             try {
-                Class<?> pluginClass = Class.forName("org.bukkit.plugin.Plugin");
+                Class<?> webServerClass = Class.forName("team.kitemc.verifymc.web.WebServer");
                 Object pluginObj3 = pluginAdapter.getPluginProxy();
-                if (pluginClass.isInstance(pluginObj3)) {
-                    webServer = new WebServer(port, staticDir, (org.bukkit.plugin.Plugin) pluginObj3,
-                        codeService, mailService, userDao, auditDao, authmeService, wsServer, messages);
-                } else {
-                    logger.warn("Failed to create Web server: Plugin proxy does not implement Plugin interface");
-                    return;
-                }
-            } catch (ClassNotFoundException cnfe) {
-                logger.debug("Bukkit Plugin class not available, Web server may not work correctly");
-                return;
+                webServer = (WebServer) webServerClass.getConstructor(int.class, String.class, Object.class,
+                    VerifyCodeService.class, MailService.class, UserDao.class, AuditDao.class,
+                    AuthmeService.class, ReviewWebSocketServer.class, ResourceBundle.class)
+                    .newInstance(port, staticDir, pluginObj3, codeService, mailService, userDao, auditDao, authmeService, wsServer, messages);
+                webServer.start();
+                logger.info(getMessage("web.start_success") + ": " + port);
+            } catch (Exception e) {
+                logger.warn("Failed to create/start Web server: " + e.getMessage());
             }
-        } catch (Exception e) {
-            logger.warn("Failed to create Web server: " + e.getMessage());
-            return;
-        }
-        try {
-            webServer.start();
-            logger.info(getMessage("web.start_success") + ": " + port);
-        } catch (Exception e) {
-            logger.warn(getMessage("web.start_failed") + ": " + e.getMessage());
         }
 
         // Register commands
